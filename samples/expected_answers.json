@@ -1,0 +1,11 @@
+[
+  {"pdf": "sample_short.pdf", "question": "When was the Eiffel Tower completed?", "expected": "1889"},
+  {"pdf": "sample_short.pdf", "question": "How tall is the Eiffel Tower?", "expected": "330 metres"},
+  {"pdf": "sample_short.pdf", "question": "Who is the president of France?", "expected": null},
+  {"pdf": "sample_long.pdf", "question": "Who coined the term artificial intelligence?", "expected": "John McCarthy"},
+  {"pdf": "sample_long.pdf", "question": "Which computer defeated Garry Kasparov in 1997?", "expected": "Deep Blue"},
+  {"pdf": "sample_long.pdf", "question": "What was the title of the paper that introduced the Transformer?", "expected": "Attention Is All You Need"},
+  {"pdf": "sample_long.pdf", "question": "How many parameters does GPT-3 have?", "expected": "175 billion"},
+  {"pdf": "sample_french.pdf", "question": "Quelle est la hauteur de la tour Eiffel ?", "expected": "330 mètres", "multilingual": true},
+  {"pdf": "sample_french.pdf", "question": "En quelle année la tour a-t-elle été achevée ?", "expected": "1889", "multilingual": true}
+]
