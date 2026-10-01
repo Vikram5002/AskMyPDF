@@ -1,0 +1,18 @@
+.venv/
+__pycache__/
+*.pyc
+
+# secrets (HF_TOKEN) -- never commit this; .env.example is the template
+.env
+
+# downloaded model weights (hundreds of MB to GBs)
+models/*
+!models/.gitkeep
+
+# user uploads
+uploads/*
+!uploads/.gitkeep
+
+# PDFs dropped in the project root (test documents, scanned books).
+# Demo PDFs live in samples/ and ARE tracked.
+/*.pdf

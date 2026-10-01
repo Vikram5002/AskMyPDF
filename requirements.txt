@@ -1,0 +1,23 @@
+# Tested with Python 3.10 and the versions noted on the right.
+
+# transformers 5.x REMOVED pipeline("question-answering"), so stay on 4.x.
+transformers>=4.40,<5      # tested 4.57.6
+# The plain PyPI wheel is CPU-only, which is fine but slow for OCR. For an
+# NVIDIA GPU install a CUDA build instead (see the README, "Using a GPU"):
+#   pip install torch==2.14.0+cu126 torchvision==0.29.0+cu126 \
+#       --index-url https://download.pytorch.org/whl/cu126
+torch>=2.0                 # tested 2.14.0 (CPU and cu126 builds)
+streamlit>=1.37            # tested 1.64.0
+pdfplumber>=0.10           # tested 0.11.10
+PyPDF2>=3.0                # tested 3.0.1
+
+# Only needed by the multilingual model: its tokenizer ships as a SentencePiece
+# file, and transformers needs this package to load it.
+sentencepiece>=0.1.99      # tested 0.2.2
+
+# OPTIONAL -- only for scanned PDFs (pages that are images, common for Indian
+# language books). Everything else works without it. It reuses the PyTorch
+# above and downloads ~100 MB of OCR models on first use.
+# Page rendering uses pypdfium2 + Pillow (installed with pdfplumber) and numpy
+# (installed with transformers/streamlit), so those need no separate entry.
+easyocr>=1.7               # tested 1.7.2
