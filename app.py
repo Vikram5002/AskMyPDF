@@ -1,5 +1,5 @@
 """
-Streamlit user interface for the PDF Question-Answering System.
+Streamlit user interface for AskMyPDF.
 
 Run with:   streamlit run app.py
 
@@ -37,7 +37,7 @@ from app.ocr import OCR_CHOICES, OCRError, gpu_available, ocr_available
 from app.pdf_extractor import EmptyPDFError, PDFReadError, extract_text, extract_with_ocr
 from app.qa_engine import QAEngine
 
-st.set_page_config(page_title="PDF Question Answering", page_icon="📄", layout="wide")
+st.set_page_config(page_title="AskMyPDF", page_icon="📄", layout="wide")
 
 
 # ---------------------------------------------------------------------------
@@ -209,7 +209,7 @@ with st.sidebar:
 # ---------------------------------------------------------------------------
 # Main page: 1) choose a PDF
 # ---------------------------------------------------------------------------
-st.title("📄 PDF Question Answering")
+st.title("📄 AskMyPDF")
 st.caption("Upload a PDF, ask a question, and an extractive QA model finds the "
            "answer span in the document.")
 

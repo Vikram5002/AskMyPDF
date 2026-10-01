@@ -1,4 +1,4 @@
-# 📄 PDF Question-Answering System
+# 📄 AskMyPDF — Transformer-Based Extractive Question Answering over PDFs
 
 Ask a question in plain language about any PDF and get the exact answer back,
 with a confidence score and the passage it came from. Instead of reading a
