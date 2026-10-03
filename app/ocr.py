@@ -168,30 +168,71 @@ def ocr_pdf(
 
     cache = {} if cache is None else cache
     result: Dict[int, str] = {}
-    for done, page_no in enumerate(wanted, start=1):
-        if page_no in cache:                       # already read earlier
-            result[page_no] = cache[page_no]
+    try:
+        for done, page_no in enumerate(wanted, start=1):
+            if page_no in cache:                       # already read earlier
+                result[page_no] = cache[page_no]
+                if progress:
+                    progress(done, len(wanted))
+                continue
+
+            # scale = dpi / 72 because PDF coordinates are in 72-dpi points.
+            try:
+                image = np.array(pdf[page_no - 1].render(scale=dpi / 72).to_pil())
+            except Exception as exc:
+                raise _memory_aware_error(exc, page_no, rendering=True) from exc
+
+            try:
+                # paragraph=True merges detected line boxes into readable blocks.
+                lines = reader.readtext(image, detail=0, paragraph=True)
+            except Exception as exc:
+                # The GPU can run out of memory on a big page even though the
+                # model loaded fine. Redo this page on the CPU rather than
+                # abandoning the whole run.
+                if _is_out_of_gpu_memory(exc):
+                    logger.warning("OCR page %d: GPU out of memory, using CPU.", page_no)
+                    reader = _get_reader(languages, gpu=False)
+                    try:
+                        lines = reader.readtext(image, detail=0, paragraph=True)
+                    except Exception as cpu_exc:
+                        raise _memory_aware_error(cpu_exc, page_no) from cpu_exc
+                else:
+                    raise _memory_aware_error(exc, page_no) from exc
+
+            text = "\n".join(lines).strip()
+            result[page_no] = cache[page_no] = text
+            logger.info("OCR page %d (%d/%d): %d words", page_no, done, len(wanted),
+                        len(text.split()))
             if progress:
                 progress(done, len(wanted))
-            continue
-        try:
-            # scale = dpi / 72 because PDF coordinates are in 72-dpi points.
-            image = pdf[page_no - 1].render(scale=dpi / 72).to_pil()
-            # paragraph=True merges detected line boxes into readable blocks.
-            lines = reader.readtext(np.array(image), detail=0, paragraph=True)
-        except MemoryError as exc:
-            # A 300-dpi A4 page is a ~2550x3300x3 array; huge pages can run out.
-            raise OCRError(
-                f"Ran out of memory while reading page {page_no}. "
-                f"Try fewer pages, or a lower OCR_DPI in app/config.py."
-            ) from exc
-        except Exception as exc:
-            raise OCRError(f"OCR failed on page {page_no}: {exc}") from exc
-        text = "\n".join(lines).strip()
-        result[page_no] = cache[page_no] = text
-        logger.info("OCR page %d (%d/%d): %d words", page_no, done, len(wanted),
-                    len(text.split()))
-        if progress:
-            progress(done, len(wanted))
+    finally:
+        pdf.close()        # release the file handle and the rendered pages
 
     return result
+
+
+def _is_out_of_gpu_memory(exc: BaseException) -> bool:
+    text = f"{type(exc).__name__}: {exc}".lower()
+    return "cuda" in text and ("out of memory" in text or "cublas" in text)
+
+
+def _memory_aware_error(exc: BaseException, page_no: int, rendering: bool = False) -> OCRError:
+    """
+    Turn a failure into a readable message, spotting the memory ones.
+
+    A 300-dpi page is a ~2,500 x 3,300 x 3 array -- over 1 GB once OpenCV and
+    the OCR model have their own copies. Depending on where it runs out, that
+    surfaces as MemoryError, a numpy/OpenCV allocation error, or a plain
+    RuntimeError, so match on the message as well as the type.
+    """
+    text = f"{type(exc).__name__}: {exc}".lower()
+    out_of_memory = isinstance(exc, MemoryError) or any(
+        hint in text for hint in ("out of memory", "allocat", "bad_alloc", "cannot reserve"))
+    if out_of_memory:
+        return OCRError(
+            f"Ran out of memory on page {page_no}. Read fewer pages at a time, "
+            f"close other applications, or lower OCR_DPI in app/config.py "
+            f"(300 -> 200 roughly halves the memory needed)."
+        )
+    stage = "rendering" if rendering else "reading"
+    return OCRError(f"OCR failed while {stage} page {page_no}: {exc}")

@@ -119,6 +119,14 @@ class TestScannedDetection(unittest.TestCase):
     def test_text_pdf_is_not_flagged(self):
         self.assertFalse(extract_text(SAMPLES_DIR / "sample_long.pdf").looks_scanned)
 
+    def test_partly_scanned_pdf_is_flagged(self):
+        # 5 typed pages + 30 scanned ones averages 57 words/page, which looks
+        # fine, but the 30 image pages would be silently ignored without OCR.
+        from app.pdf_extractor import ExtractionResult
+        mixed = ExtractionResult(pages=["word " * 400] * 5 + [""] * 30,
+                                 method="pdfplumber")
+        self.assertTrue(mixed.looks_scanned)
+
     def test_watermark_only_pdf_is_flagged(self):
         from app.pdf_extractor import ExtractionResult
         # 39 pages, 10 words in total -- a real scanned book behaves like this.
@@ -131,7 +139,7 @@ class TestScannedDetection(unittest.TestCase):
         self.assertFalse(ExtractionResult(pages=["short ocr text"], method="OCR").looks_scanned)
 
 
-class TestChunkSizeBySript(unittest.TestCase):
+class TestChunkSizeByScript(unittest.TestCase):
     """Non-Latin scripts need smaller chunks to fit the 512-token window."""
 
     def test_english_gets_the_default(self):
@@ -157,6 +165,83 @@ class TestChunkSizeBySript(unittest.TestCase):
         from app.chunker import suggest_chunk_size
         from app.config import CHUNK_SIZE_WORDS
         self.assertEqual(suggest_chunk_size("12345 ...")[0], CHUNK_SIZE_WORDS)
+
+
+class TestRealWorldExtraction(unittest.TestCase):
+    """Bugs found on real LaTeX/two-column PDFs rather than the generated samples."""
+
+    def test_word_spacing_is_not_lost(self):
+        # pdfplumber's default x_tolerance glues tight LaTeX spacing into
+        # "WeusedtheAdamoptimizer"; app.config.X_TOLERANCE fixes it.
+        from app.config import X_TOLERANCE
+        self.assertLessEqual(X_TOLERANCE, 2)
+
+    def test_real_hyphens_survive(self):
+        from app.pdf_extractor import clean_text
+        # "self" appears on its own, so the hyphen is real and must be kept.
+        out = clean_text("self-\nattention is used; self and attention matter")
+        self.assertIn("self-attention", out)
+        self.assertNotIn("selfattention", out)
+
+    def test_broken_words_are_rejoined(self):
+        from app.pdf_extractor import clean_text
+        # "infor" is not a word elsewhere in the text, so the halves join up.
+        self.assertIn("information", clean_text("the infor-\nmation was useful"))
+
+    def test_two_column_page_is_detected(self):
+        import pdfplumber
+        from app.config import X_TOLERANCE
+        from app.pdf_extractor import _column_boundary
+        # The bundled samples are single-column: they must NOT be split.
+        with pdfplumber.open(SAMPLES_DIR / "sample_long.pdf") as pdf:
+            words = pdf.pages[0].extract_words(x_tolerance=X_TOLERANCE)
+            self.assertIsNone(_column_boundary(words))
+
+    def test_chunk_size_shrinks_for_token_dense_text(self):
+        # A document that tokenises into many tokens per word must get a
+        # smaller chunk, or every chunk overflows the 512-token window.
+        from app.chunker import suggest_chunk_size
+        from app.config import CHUNK_SIZE_WORDS
+
+        class FakeTokenizer:
+            def __call__(self, text, add_special_tokens=False):
+                return {"input_ids": [0] * (len(text.split()) * 4)}   # 4 tokens/word
+
+        size, overlap = suggest_chunk_size(" ".join(["word"] * 500), tokenizer=FakeTokenizer())
+        self.assertLess(size, CHUNK_SIZE_WORDS)
+        self.assertLess(overlap, size)
+
+
+class TestModelLoadFailure(unittest.TestCase):
+
+    def test_memory_failure_gives_a_readable_message(self):
+        # Windows reports exhaustion as "The paging file is too small", and
+        # transformers then says "Could not load model with any of the
+        # following classes", which tells the user nothing useful.
+        from app.qa_engine import ModelLoadError, load_local_pipeline
+        # NOTE: patch transformers.pipelines.pipeline, not transformers.pipeline:
+        # transformers is a _LazyModule and ignores patches on the facade.
+        with mock.patch("transformers.pipelines.pipeline",
+                        side_effect=OSError("The paging file is too small (os error 1455)")):
+            with self.assertRaises(ModelLoadError) as caught:
+                load_local_pipeline("deepset/roberta-base-squad2")
+        self.assertIn("memory", str(caught.exception).lower())
+
+
+class TestSpacelessScripts(unittest.TestCase):
+
+    def test_chinese_text_is_chunked_not_rejected(self):
+        from app.chunker import chunk_text
+        chinese = "北京是中国的首都。故宫位于北京市中心，建于1420年。" * 20
+        chunks = chunk_text(chinese, chunk_size=100, overlap=20)
+        self.assertGreater(len(chunks), 1)
+        # Characters must not be glued back together with spaces.
+        self.assertNotIn(" ", chunks[0].text)
+
+    def test_truly_tiny_text_still_raises(self):
+        from app.chunker import TextTooShortError, chunk_text
+        with self.assertRaises(TextTooShortError):
+            chunk_text("北京")
 
 
 class TestEngineArgumentHandling(unittest.TestCase):
@@ -263,6 +348,24 @@ class TestDotEnv(unittest.TestCase):
     def test_missing_file_is_fine(self):
         from app import load_dotenv
         load_dotenv(ROOT / "no_such.env")   # must not raise
+
+    def test_byte_order_mark_and_inline_comment(self):
+        # Windows Notepad writes a BOM; without utf-8-sig the key becomes
+        # "﻿HF_TOKEN" and the token is silently missed.
+        from app import load_dotenv
+        env = self._write_env_bytes('HF_TOKEN=hf_abc  # my token\n')
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("HF_TOKEN", None)
+            load_dotenv(env)
+            self.assertEqual(os.environ.get("HF_TOKEN"), "hf_abc")
+            self.assertFalse([k for k in os.environ if k.startswith("﻿")])
+
+    def _write_env_bytes(self, text: str) -> Path:
+        import tempfile
+        path = Path(tempfile.mkdtemp()) / ".env"
+        path.write_text(text, encoding="utf-8-sig")
+        self.addCleanup(lambda: path.unlink(missing_ok=True))
+        return path
 
 
 class TestInferenceAPIWithoutToken(unittest.TestCase):

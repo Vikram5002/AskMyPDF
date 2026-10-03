@@ -47,6 +47,10 @@ from app.config import (
 
 logger = logging.getLogger(__name__)
 
+
+class ModelLoadError(Exception):
+    """The QA model could not be loaded (usually not enough free memory)."""
+
 # Signature every backend follows: (question, context) -> {"answer", "score", "start", "end"}
 QAFunction = Callable[[str, str], Dict]
 
@@ -60,6 +64,12 @@ class Candidate:
     start: int          # character offsets of the answer inside chunk.text
     end: int
     chunk: Chunk
+    null_score: float = 0.0   # the chunk's "no answer here" score
+
+    @property
+    def margin(self) -> float:
+        """How much the model prefers this span over saying nothing."""
+        return self.score - self.null_score
 
 
 @dataclass
@@ -73,7 +83,8 @@ class QAResult:
     mode: str                           # "direct" (short doc) or "chunked" (long doc)
     num_chunks: int
     best: Optional[Candidate] = None    # where the answer came from
-    candidates: List[Candidate] = field(default_factory=list)  # all chunks' answers, best first
+    candidates: List[Candidate] = field(default_factory=list)  # confident answers, best first
+    suggestions: List[Candidate] = field(default_factory=list)  # spans the model declined
 
     @property
     def found(self) -> bool:
@@ -82,6 +93,36 @@ class QAResult:
     @property
     def low_confidence(self) -> bool:
         return self.found and self.score < LOW_CONFIDENCE_THRESHOLD
+
+
+def _merge_outputs(outputs) -> Dict:
+    """
+    Turn the pipeline's top-k list into one result.
+
+    With `handle_impossible_answer`, one of the entries is the "no answer"
+    option (an empty string) and the others are real spans. We keep BOTH:
+
+      * answer / score   -- the best real span, even if the model prefers
+                            "no answer"; otherwise a correct answer the model
+                            was merely unsure about would be thrown away.
+      * null_score       -- how strongly it prefers saying nothing.
+
+    The difference between the two is what makes chunks comparable: a chunk
+    that genuinely contains the answer beats its own "no answer" option,
+    while a chunk that doesn't will not.
+    """
+    if isinstance(outputs, dict):
+        outputs = [outputs]
+    best_span, null_score = None, 0.0
+    for item in outputs:
+        if item["answer"].strip():
+            if best_span is None or item["score"] > best_span["score"]:
+                best_span = item
+        else:
+            null_score = max(null_score, float(item["score"]))
+    if best_span is None:
+        return {"answer": "", "score": 0.0, "start": 0, "end": 0, "null_score": null_score}
+    return {**best_span, "null_score": null_score}
 
 
 def _trim_span(context: str, start: int, end: int):
@@ -112,6 +153,20 @@ def load_local_pipeline(model_name: str = ENGLISH_MODEL) -> QAFunction:
         return pipeline("question-answering", model=model_name,
                         tokenizer=model_name, device=device)
 
+    def build_cpu():
+        try:
+            return build(-1)
+        except Exception as exc:
+            # transformers reports a memory failure as the baffling "Could not
+            # load model ... with any of the following classes". Say what it is.
+            raise ModelLoadError(
+                f"Could not load {model_name}. The most likely cause is too "
+                f"little free memory: the English model needs about 1 GB and "
+                f"the multilingual one about 2.5 GB. Close other applications "
+                f"and try again, or switch to the English model.\n"
+                f"Original error: {exc}"
+            ) from exc
+
     if torch.cuda.is_available():
         try:
             qa_pipeline = build(0)          # GPU
@@ -121,21 +176,46 @@ def load_local_pipeline(model_name: str = ENGLISH_MODEL) -> QAFunction:
             logger.warning("Loading %s on the GPU failed (%s); using the CPU.",
                            model_name, exc)
             torch.cuda.empty_cache()
-            qa_pipeline = build(-1)
+            qa_pipeline = build_cpu()
     else:
-        qa_pipeline = build(-1)             # CPU
+        qa_pipeline = build_cpu()           # CPU
 
-    def ask(question: str, context: str) -> Dict:
-        return qa_pipeline(
+    state = {"pipeline": qa_pipeline}
+
+    def run(context_pipeline, question: str, context: str):
+        return context_pipeline(
             question=question,
             context=context,
             handle_impossible_answer=True,   # allow an empty "no answer" result
+            top_k=2,
             max_answer_len=MAX_ANSWER_TOKENS,
             max_seq_len=MAX_SEQ_LEN_TOKENS,  # use the model's full 512-token window
             doc_stride=DOC_STRIDE_TOKENS,
         )
 
+    def ask(question: str, context: str) -> Dict:
+        # top_k=2 returns the best real span AND the "no answer" option, so we
+        # can see both the model's answer and how strongly it prefers silence.
+        try:
+            return _merge_outputs(run(state["pipeline"], question, context))
+        except Exception as exc:
+            # Running out of GPU memory mid-answer must not end the session:
+            # move the model to the CPU and carry on, more slowly.
+            if _is_out_of_gpu_memory(exc) and state["pipeline"].device.type == "cuda":
+                logger.warning("GPU out of memory while answering; moving to CPU.")
+                torch.cuda.empty_cache()
+                state["pipeline"] = build(-1)
+                return _merge_outputs(run(state["pipeline"], question, context))
+            raise
+
+    ask.tokenizer = qa_pipeline.tokenizer    # used to size chunks by real tokens
     return ask
+
+
+def _is_out_of_gpu_memory(exc: BaseException) -> bool:
+    """CUDA OOM arrives under several different exception types and messages."""
+    text = f"{type(exc).__name__}: {exc}".lower()
+    return "out of memory" in text or "cuda error" in text or "cublas" in text
 
 
 class QAEngine:
@@ -196,7 +276,10 @@ class QAEngine:
         # holding the whole text -> "direct" mode, one model call. A long one
         # becomes several overlapping chunks -> "chunked" mode.
         if chunk_size is None or overlap is None:
-            suggested_size, suggested_overlap = suggest_chunk_size(text or " ".join(pages or []))
+            # Pass the model's own tokenizer so the chunk size is measured from
+            # this document rather than guessed from its script.
+            suggested_size, suggested_overlap = suggest_chunk_size(
+                text or " ".join(pages or []), tokenizer=getattr(self._ask, "tokenizer", None))
             # `is None` rather than `or`, so an explicit 0 still reaches the
             # validation in chunk_text() instead of being silently replaced.
             if chunk_size is None:
@@ -213,13 +296,14 @@ class QAEngine:
         for i, chunk in enumerate(chunks):
             out = self._ask(question, chunk.text)
             start, end = _trim_span(chunk.text, int(out["start"]), int(out["end"]))
-            if out["answer"].strip() and end > start:   # skip the "no answer" result
+            if out["answer"].strip() and end > start:
                 candidates.append(Candidate(
                     answer=chunk.text[start:end],
                     # When a chunk overflows the window and the same answer is
                     # found in two overlapping windows, the pipeline ADDS the
                     # two scores, which can exceed 1. Cap it so it stays a probability.
                     score=min(float(out["score"]), 1.0),
+                    null_score=min(float(out.get("null_score", 0.0)), 1.0),
                     start=start,
                     end=end,
                     chunk=chunk,
@@ -227,12 +311,17 @@ class QAEngine:
             if progress:
                 progress(i + 1, len(chunks))
 
-        # CONFIDENCE-BASED SELECTION: keep the answer the model was most sure
-        # about. Caveat: each chunk's score is normalised *within that chunk*,
-        # so scores from different chunks are only roughly comparable -- a
-        # simple heuristic, but it works well in practice.
-        candidates.sort(key=lambda c: c.score, reverse=True)
-        best = candidates[0] if candidates else None
+        # SELECTION ACROSS CHUNKS. A raw score is normalised *within* its own
+        # chunk, so scores from different chunks are not directly comparable:
+        # a chunk with no answer still has to put its probability somewhere.
+        # Ranking by (span score - "no answer" score) fixes that, because it
+        # asks "does this chunk prefer its answer over staying silent?" --
+        # the standard SQuAD 2.0 way of comparing passages.
+        candidates.sort(key=lambda c: c.margin, reverse=True)
+        # A chunk whose "no answer" option wins is not a real answer; keep the
+        # spans only as suggestions so a near-miss isn't silently discarded.
+        confident = [c for c in candidates if c.margin > 0]
+        best = confident[0] if confident else None
 
         return QAResult(
             question=question,
@@ -242,5 +331,8 @@ class QAEngine:
             mode=mode,
             num_chunks=len(chunks),
             best=best,
-            candidates=candidates,
+            candidates=confident,
+            # Best spans from chunks that preferred "no answer" -- shown to the
+            # user as a guess rather than thrown away.
+            suggestions=[c for c in candidates if c.margin <= 0][:3],
         )

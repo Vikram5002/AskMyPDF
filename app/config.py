@@ -44,9 +44,23 @@ CHUNK_OVERLAP_WORDS = 50
 CHUNK_SIZE_WORDS_NON_LATIN = 150
 CHUNK_OVERLAP_WORDS_NON_LATIN = 40
 
+# When the model's tokenizer is available, chunk size is measured from the
+# document instead of guessed (see chunker.suggest_chunk_size). This is how
+# many tokens of the 512-token window are left for the context itself, after
+# allowing for the question and the [CLS]/[SEP] markers.
+TOKEN_BUDGET_PER_CHUNK = 440
+
+# Never go below this many words per chunk, or answers lose their context.
+MIN_CHUNK_SIZE_WORDS = 60
+
 # Fewer words than this and there's not enough text to answer anything
 # (e.g. a scanned PDF that only yielded a page number).
 MIN_WORDS_FOR_QA = 5
+
+# Chinese, Japanese and Thai don't put spaces between words, so counting words
+# fails for them. If a document has fewer words than above but at least this
+# many characters, it is chunked by character instead (see chunker.py).
+MIN_CHARS_FOR_QA = 40
 
 # --------------------------------------------------------------------------
 # OCR (optional, for scanned PDFs -- see app/ocr.py)
@@ -55,6 +69,20 @@ MIN_WORDS_FOR_QA = 5
 # words per page than this, it is almost certainly a scan (a picture of text)
 # and needs OCR.
 SCANNED_WORDS_PER_PAGE = 20
+
+# A single page with fewer words than this counts as "empty". If more than half
+# the pages are empty, the file is treated as (partly) scanned even when its
+# average looks fine -- e.g. 5 text pages plus 30 scanned ones.
+SCANNED_PAGE_WORDS = 10
+
+# --------------------------------------------------------------------------
+# Text extraction
+# --------------------------------------------------------------------------
+# pdfplumber decides where one word ends and the next begins from the gap
+# between characters. Its default of 3 points is too wide for the tight
+# spacing LaTeX produces, which glues whole lines into
+# "WeusedtheAdamoptimizer". 1.5 points splits them correctly.
+X_TOLERANCE = 1.5
 
 # EasyOCR language codes. One Indic language at a time, optionally with English.
 OCR_LANGUAGES = ("te", "en")   # Telugu + English

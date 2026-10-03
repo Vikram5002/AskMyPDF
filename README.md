@@ -25,18 +25,36 @@ Hugging Face **extractive question-answering** model (RoBERTa fine-tuned on SQuA
 
 1. **Extraction** ([app/pdf_extractor.py](app/pdf_extractor.py)): `pdfplumber` rebuilds the text
    from the PDF page by page. If it fails or finds nothing, `PyPDF2` gets a try.
-   Line-break hyphenation is undone and whitespace is cleaned up.
+   Three details matter on real documents:
+   - **Word spacing.** pdfplumber splits words by the gap between characters, and
+     its default is too wide for LaTeX, turning lines into `WeusedtheAdamoptimizer`.
+     Using `x_tolerance=1.5` took the *Attention Is All You Need* paper from 2,017
+     "words" to 6,183 real ones.
+   - **Two columns.** Papers and many books print two columns; read straight across
+     they interleave two unrelated sentences. Pages are checked for a gutter and each
+     column is read in full, in order.
+   - **Hyphens.** `infor-\nmation` must be joined, but `self-\nattention` must keep its
+     hyphen. The rule: keep the hyphen if the part before it also appears as a word on
+     its own elsewhere in the document.
 2. **Chunking** ([app/chunker.py](app/chunker.py)): a transformer can only read about
-   512 tokens at once, so long documents are cut into ~400-word chunks. Each chunk overlaps
-   the previous one by 50 words, so an answer on a boundary is complete in at least
-   one chunk. A document that fits in a single chunk is passed **directly** as one context.
+   512 tokens at once, so long documents are cut into overlapping chunks; an answer on a
+   boundary is therefore complete in at least one chunk. A document that fits in a single
+   chunk is passed **directly** as one context.
+   The chunk size is **measured, not assumed**: the model's own tokenizer is run over a
+   sample of the document, because tokens per word vary from ~1.2 (plain English) to ~2.7
+   (Telugu) to 4+ (a paper full of formulas and citations). A fixed 400 words produces
+   900–2,400-token chunks on real papers, far past the limit.
 3. **QA inference** ([app/qa_engine.py](app/qa_engine.py)): `pipeline("question-answering")`
    reads `[question] + [chunk]` and predicts, for every token, the probability that it
    is the **start** and the **end** of the answer. The best span is the answer, and
    P(start) × P(end) is its **confidence score**. The SQuAD 2.0 models can also say
    *"no answer here"*.
-4. **Selection**: the answer with the highest confidence across all chunks wins.
-   The UI shows it with its score, chunk number, page range and the highlighted context.
+4. **Selection**: each chunk also reports how strongly it would rather say *"no answer
+   here"*. Chunks are ranked by the **margin** between the two — span score minus
+   "no answer" score — because a raw score is normalised inside its own chunk and so
+   isn't comparable across chunks. If no chunk beats its own "no answer" option, the
+   app says so and still lists the closest guesses instead of discarding them.
+   The winner is shown with its score, chunk number, page range and highlighted context.
 
 ## Project structure
 
@@ -58,10 +76,19 @@ nlp_project/
 │   ├── sample_*.pdf          #   English (short/long) and French demo PDFs
 │   ├── expected_answers.json #   questions + expected answers used by tests
 │   └── indic_examples.json   #   Indian-language questions (11 languages)
+├── testings/                 # 26 multilingual test PDFs + the questions to ask
+│   ├── test_<code>_<lang>.pdf    one passage per language (same facts in each)
+│   ├── ALL_QUESTIONS.pdf         every question + expected answer, to read while testing
+│   ├── questions.json            the same questions, for the automated runner
+│   └── test_corpus.json          the source text -- edit, then regenerate
 ├── scripts/
 │   ├── make_sample_pdfs.py   #   regenerates samples/*.pdf (no extra libraries)
 │   ├── run_examples.py       #   end-to-end demo on the sample PDFs
-│   └── run_indic_examples.py #   Indian-language demo (typed text, no PDF)
+│   ├── run_indic_examples.py #   Indian-language demo (typed text, no PDF)
+│   ├── make_test_pdfs.py     #   builds testings/*.pdf (any script, via Edge/Chrome)
+│   ├── run_test_pdfs.py      #   runs every testings/ PDF and scores the answers
+│   └── make_screenshot.py    #   dev tool: regenerates docs/screenshot.png
+├── docs/screenshot.png       # the screenshot shown above
 ├── tests/test_qa_system.py   # unit + end-to-end tests
 ├── requirements.txt
 ├── .env.example              # template for HF_TOKEN -> copy to .env
@@ -114,9 +141,18 @@ Other things the page offers:
 - **Download extracted text**, to check what was really read (especially after OCR).
 - A warning when a non-Latin PDF is paired with the English-only model.
 
-<!-- To add a screenshot: run the app, ask a question, save a screenshot as
-     docs/screenshot.png, then uncomment the next line. -->
-<!-- ![App screenshot](docs/screenshot.png) -->
+![AskMyPDF answering a question about the sample PDF](docs/screenshot.png)
+
+*Regenerate it with the app running: `python scripts/make_screenshot.py`
+(needs `pip install playwright`; it is a dev tool, not a dependency).*
+
+### Share a question as a link
+
+The page reads three optional URL parameters, so a demo can be opened ready-answered:
+
+```
+http://localhost:8501/?sample=sample_long.pdf&q=Who+coined+the+term+artificial+intelligence&model=multilingual
+```
 
 ## Sample Q&A
 
@@ -159,7 +195,7 @@ correctly declines instead of guessing.
 ## Testing
 
 ```bash
-python -m unittest discover -s tests -v          # 35 tests (32 run, 3 skipped), ~18 s
+python -m unittest discover -s tests -v          # 48 tests (42 run, 6 skipped), ~25 s
 SKIP_MODEL_TESTS=1 python -m unittest discover -s tests       # fast tests only
 RUN_MULTILINGUAL_TESTS=1 python -m unittest discover -s tests # + multilingual (2.2 GB)
 RUN_OCR_TESTS=1 python -m unittest discover -s tests          # + OCR (needs easyocr)
@@ -177,6 +213,26 @@ span really comes from its source chunk.
 
 To try your own PDF, upload it in the UI, or add it to `samples/` together with an
 entry in `samples/expected_answers.json` (`"expected": null` means "should find no answer").
+
+### Multilingual test PDFs (`/testings`)
+
+26 generated PDFs — one short passage per language, all stating the same facts — plus
+`ALL_QUESTIONS.pdf` listing every question with its expected answer. See
+[testings/README.md](testings/README.md) for the full results.
+
+```bash
+python scripts/run_test_pdfs.py                  # all 26 languages
+python scripts/run_test_pdfs.py --only te,hi,ta  # just a few
+python scripts/run_test_pdfs.py --ocr            # read the pages as images instead
+python scripts/make_test_pdfs.py                 # rebuild after editing test_corpus.json
+```
+
+**45 of 55 questions correct** from the PDF text layer. English, French, Spanish, German,
+Portuguese, Russian, Turkish, Chinese, Japanese, Korean, Arabic, Urdu, Sindhi, Hindi,
+Tamil and Punjabi score 100%. The 10 failures are all the same question in the Indic
+languages — the one whose answer contains a conjunct consonant that the PDF text layer
+cannot map back to Unicode. Reading those pages with `--ocr` recovers them
+(Telugu, Kannada and Bengali each go 1/2 → 2/2).
 
 ## Scanned PDFs and Indian languages
 
@@ -219,7 +275,7 @@ image. Measured on this machine (page from the scanned Telugu book):
 |---|---|
 | **Read only the pages you need** (sidebar: *Start at page* / *How many pages*) | Biggest win — skipping 4 cover pages saves ~80 s |
 | **Page cache** | Widening the range re-uses pages already read; nothing is OCR'd twice |
-| **GPU (CUDA)** | Several times faster than CPU; used automatically when available |
+| **GPU (CUDA)** | Used automatically. Helps answering a lot (1.7× here), OCR barely — see below |
 | Lower DPI (300 → 200) | 1.5× faster, but ~30% of the recognised words change — not worth it for Indic scripts |
 | EasyOCR `batch_size` 4/16 | No measurable difference |
 | More PyTorch threads (8 → 16) | **2× slower** — hyperthreading hurts here |
@@ -231,8 +287,22 @@ compute-bound, so the practical levers are *read fewer pages* and *use a GPU*.
 ### Using a GPU
 
 The app uses a CUDA GPU automatically for both OCR and question answering when
-PyTorch can see one; the sidebar shows ⚡ *Running on GPU (CUDA)* or *CPU*. A default
-`pip install torch` gives a **CPU-only** build. To switch on an NVIDIA card:
+PyTorch can see one; the sidebar shows ⚡ *Running on GPU (CUDA)* or *CPU*.
+
+Measured on a GTX 1650 Max-Q (4 GB), against 8 CPU cores:
+
+| Task | CPU | GPU |
+|---|---|---|
+| Answering (27 chunks) | 547 ms/chunk | **322 ms/chunk** (1.7×) |
+| OCR (one scanned page) | 33 s | 31 s (barely better) |
+
+The OCR result is worth understanding: EasyOCR's text *detection* runs on a 2560-pixel
+image and fills a 4 GB card, so the driver starts spilling GPU memory into system RAM
+and the gain disappears. A card with more memory would do much better. Shrinking the
+detection size roughly halves the time but changes ~30% of the recognised words, which
+is a bad trade for Indic scripts, so the default is left alone.
+
+A default `pip install torch` gives a **CPU-only** build. To switch on an NVIDIA card:
 
 ```bash
 pip install torch==2.14.0+cu126 torchvision==0.29.0+cu126 --index-url https://download.pytorch.org/whl/cu126
@@ -421,6 +491,28 @@ Use token type **Read**, or the fine-grained **Inference** preset. The app repor
 | Two-level windowing | `qa_engine.py` | Our word chunks, plus the pipeline's own token windows (`doc_stride`) as a safety net. |
 | Tokenization | (pipeline) | Words are split into sub-word pieces: "Transformer" → "Trans" + "former", "photosynthesis" → "photos" + "ynthesis". |
 
+## How well does it do on real documents?
+
+The bundled samples are clean, so they pass 7/7. Research papers are much harder.
+Measured on the actual PDFs of *Attention Is All You Need* and the BERT paper, with
+hand-written questions whose answers are definitely in the text:
+
+| | Before the extraction fixes | After |
+|---|---|---|
+| BERT paper (10 questions) | 3/10 | 4/10 |
+| Attention paper (8 questions) | — | 4/8 |
+
+"What does BERT stand for?" is the clearest example: it used to answer
+*"feature-based approach"* with 96% confidence, because the abstract and the
+introduction were being read interleaved across two columns. It now answers
+*"Bidirectional Encoder Representations from Transformers"* at 98%.
+
+The remaining failures are the model's limits, not the plumbing: a 124M-parameter
+extractive model trained on Wikipedia-style questions often misses figures buried in
+tables ("how many layers does BERT-base have?"). For several of them the right answer
+does appear under *"closest guesses"*. Use this for looking things up in documents,
+not as a reliable question-answering service for technical papers.
+
 ## Known limitations
 
 - **Context window.** The model reads at most 512 tokens at a time. Chunking works around
@@ -431,6 +523,14 @@ Use token type **Read**, or the fine-grained **Inference** preset. The app repor
   can occasionally outrank the right one.
 - **Extractive only.** Answers are always a literal span from the PDF. It can't
   summarise, count, compute, or answer yes/no questions in its own words.
+- **Complex layouts.** Two-column pages are handled, but three or more columns, tables,
+  figure captions and margin notes are not: a table's numbers arrive as a flat row of
+  digits, which is why "how many layers?" style questions often fail on papers.
+- **Memory.** The multilingual model needs ~2.5 GB free RAM, and ~2.2 GB of VRAM on a
+  GPU. On a loaded machine the app reports this clearly and falls back to the CPU
+  rather than dying, but it can still be refused outright if memory is very tight.
+- **Chunks are answered one at a time.** Batching them would be faster on a GPU; it is
+  not implemented, to keep the per-chunk progress bar and error handling simple.
 - **English-first accuracy.** The default model was trained only on English. The
   multilingual model handles other languages, but it's about 4× larger and slower, and its
   training data (SQuAD 2.0) is still English, so accuracy in other languages is lower.

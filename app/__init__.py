@@ -1,5 +1,5 @@
 """
-PDF Question-Answering System.
+AskMyPDF -- extractive question answering over PDFs.
 
 Core NLP package. Each module is one step of the pipeline:
 
@@ -21,6 +21,7 @@ sets a few environment variables, *before* `transformers` is imported anywhere:
 """
 
 import os
+import re
 from pathlib import Path
 
 from app.config import MODELS_DIR, PROJECT_ROOT
@@ -40,13 +41,22 @@ def load_dotenv(path: Path = PROJECT_ROOT / ".env") -> None:
     """
     if not path.exists():
         return
-    for line in path.read_text(encoding="utf-8").splitlines():
+    # utf-8-sig strips the byte-order mark Windows editors such as Notepad put
+    # at the start of a file; without it the first key is read as "﻿HF_TOKEN"
+    # and the token is silently missed.
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
         line = line.strip().removeprefix("export ")
         if not line or line.startswith("#"):
             continue
         key, sep, value = line.partition("=")
-        if sep:
-            os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
+        if not sep:
+            continue
+        value = value.strip()
+        if not value.startswith(("'", '"')):
+            # Drop a trailing comment ("hf_abc  # my token"), but only when it
+            # follows whitespace, so a '#' inside a value is left alone.
+            value = re.split(r"\s+#", value, maxsplit=1)[0].strip()
+        os.environ.setdefault(key.strip(), value.strip("\"'"))
 
 
 load_dotenv()

@@ -55,6 +55,7 @@ def make_api_qa_function(model_name: str):
                 question=question,
                 context=context,
                 handle_impossible_answer=True,
+                top_k=2,          # best real span + the "no answer" option
                 max_answer_len=MAX_ANSWER_TOKENS,
                 max_seq_len=MAX_SEQ_LEN_TOKENS,
                 doc_stride=DOC_STRIDE_TOKENS,
@@ -79,11 +80,19 @@ def make_api_qa_function(model_name: str):
                     "moment, or switch the sidebar back to running the model locally."
                 ) from exc
             raise InferenceAPIError(f"Inference API call failed: {exc}") from exc
-        # The API may return a single result or a list (when top_k > 1).
-        if isinstance(out, list):
-            out = out[0]
-        # A "no answer" result may come back with answer/start/end = None.
-        return {"answer": out.answer or "", "score": out.score or 0.0,
-                "start": out.start or 0, "end": out.end or 0}
+        # Keep the best real span and the "no answer" score separately, exactly
+        # as the local backend does (see qa_engine._merge_outputs).
+        items = out if isinstance(out, list) else [out]
+        best, null_score = None, 0.0
+        for item in items:
+            if (item.answer or "").strip():
+                if best is None or (item.score or 0.0) > (best.score or 0.0):
+                    best = item
+            else:
+                null_score = max(null_score, item.score or 0.0)
+        if best is None:
+            return {"answer": "", "score": 0.0, "start": 0, "end": 0, "null_score": null_score}
+        return {"answer": best.answer, "score": best.score or 0.0, "start": best.start or 0,
+                "end": best.end or 0, "null_score": null_score}
 
     return ask

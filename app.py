@@ -27,6 +27,7 @@ from app.config import (
     CHUNK_SIZE_WORDS_NON_LATIN,
     ENGLISH_MODEL,
     LOW_CONFIDENCE_THRESHOLD,
+    MULTILINGUAL_MODEL,
     OCR_MAX_PAGES,
     SAMPLES_DIR,
     UPLOADS_DIR,
@@ -34,10 +35,27 @@ from app.config import (
 from app.hf_inference_api import InferenceAPIError
 from app.hub_info import get_model_info
 from app.ocr import OCR_CHOICES, OCRError, gpu_available, ocr_available
+
+# The sidebar label of the multilingual model, used by the "switch model" button.
+MULTILINGUAL_LABEL = next(label for label, name in AVAILABLE_MODELS.items()
+                          if name == MULTILINGUAL_MODEL)
 from app.pdf_extractor import EmptyPDFError, PDFReadError, extract_text, extract_with_ocr
-from app.qa_engine import QAEngine
+from app.qa_engine import ModelLoadError, QAEngine
 
 st.set_page_config(page_title="AskMyPDF", page_icon="📄", layout="wide")
+
+# ---------------------------------------------------------------------------
+# Optional URL parameters, so a demo can be shared as a link:
+#   ?sample=sample_long.pdf&q=Who+coined+the+term+AI&model=multilingual
+# They only set the INITIAL values; afterwards the widgets are in charge.
+# ---------------------------------------------------------------------------
+_params = st.query_params
+if "model_choice" not in st.session_state and _params.get("model", "").startswith("multi"):
+    st.session_state["model_choice"] = "Multilingual (XLM-RoBERTa-large)"
+if "sample_choice" not in st.session_state and _params.get("sample"):
+    st.session_state["sample_choice"] = _params["sample"]
+if "question_box" not in st.session_state and _params.get("q"):
+    st.session_state["question_box"] = _params["q"]
 
 
 # ---------------------------------------------------------------------------
@@ -45,9 +63,14 @@ st.set_page_config(page_title="AskMyPDF", page_icon="📄", layout="wide")
 # anything slow (loading a model, parsing a PDF, calling the Hub API) is cached.
 # ---------------------------------------------------------------------------
 
-@st.cache_resource(show_spinner=False)
+@st.cache_resource(show_spinner=False, max_entries=1)
 def load_engine(model_name: str, backend: str) -> QAEngine:
-    """Load the QA model once and keep it in memory across re-runs."""
+    """
+    Load the QA model once and keep it in memory across re-runs.
+
+    max_entries=1: switching models would otherwise keep both in memory
+    (~2.7 GB together), which a 4 GB GPU or a busy machine cannot afford.
+    """
     return QAEngine(model_name, backend=backend)
 
 
@@ -142,6 +165,7 @@ with st.sidebar:
     model_label = st.selectbox(
         "Model",
         list(AVAILABLE_MODELS),
+        key="model_choice",      # lets the mismatch warning switch it in one click
         help="Use the multilingual model for non-English PDFs. It is ~4x larger "
              "(slower, ~2.2 GB download) but understands ~100 languages.",
     )
@@ -181,8 +205,14 @@ with st.sidebar:
                 "How many pages", 1, 100, OCR_MAX_PAGES,
                 help="OCR takes roughly 20 seconds per page on a CPU. Pages "
                      "already read are reused when you change this range.")
+            force_ocr = st.checkbox(
+                "Use OCR even if the PDF has text", value=False,
+                help="Indian-language PDFs often store letters the text layer "
+                     "cannot map back to Unicode, so conjuncts come out broken "
+                     "(ఆగ్రా -> 'ఆ'). If the extracted-text preview looks wrong, "
+                     "switch this on: reading the page as an image recovers it.")
         else:
-            ocr_lang, ocr_first_page, ocr_max_pages = None, 1, 0
+            ocr_lang, ocr_first_page, ocr_max_pages, force_ocr = None, 1, 0, False
             st.info("OCR is off. Install it with:  pip install easyocr")
 
     # Which device the neural networks run on -- a GPU makes OCR several
@@ -219,11 +249,15 @@ with col_upload:
 with col_sample:
     sample_files = sorted(p.name for p in SAMPLES_DIR.glob("*.pdf"))
     sample = st.selectbox("...or try a sample PDF", ["(none)"] + sample_files,
-                          disabled=uploaded is not None)
+                          key="sample_choice", disabled=uploaded is not None)
 
 if uploaded is not None:
     pdf_name, pdf_bytes = uploaded.name, uploaded.getvalue()
-    save_upload(pdf_name, pdf_bytes)
+    # Streamlit re-runs this script on every interaction; hashing a 13 MB book
+    # each time is wasted work, so save it once per uploaded file.
+    if st.session_state.get("saved_upload") != uploaded.file_id:
+        save_upload(pdf_name, pdf_bytes)
+        st.session_state["saved_upload"] = uploaded.file_id
 elif sample != "(none)":
     pdf_name, pdf_bytes = sample, (SAMPLES_DIR / sample).read_bytes()
 else:
@@ -246,8 +280,8 @@ except PDFReadError as exc:
 
 # A scanned PDF either has no text at all, or a few stray words (a watermark).
 # Offer OCR in both cases instead of letting the user query an empty document.
-if doc is None or doc.looks_scanned:
-    if doc is not None:
+if doc is None or doc.looks_scanned or force_ocr:
+    if doc is not None and not force_ocr:
         st.warning(
             f"**This PDF looks scanned.** Only {doc.word_count} words were found "
             f"across {doc.num_pages} pages, which usually means the pages are "
@@ -256,7 +290,8 @@ if doc is None or doc.looks_scanned:
     if not ocr_available():
         st.info("To read scanned PDFs, install OCR:  `pip install easyocr`")
         st.stop()
-    if not st.checkbox("🔍 Read this PDF with OCR (slow: ~20 s per page)"):
+    # When the user ticked "use OCR even if the PDF has text", don't ask again.
+    if not force_ocr and not st.checkbox("🔍 Read this PDF with OCR (slow: ~20 s per page)"):
         st.stop()
     try:
         doc = ocr_once(pdf_bytes, OCR_CHOICES[ocr_lang], int(ocr_first_page),
@@ -273,8 +308,12 @@ for w in doc.warnings:
 # Non-Latin scripts need smaller chunks (see chunker.suggest_chunk_size).
 if auto_chunk:
     chunk_size, overlap = suggest_chunk_size(doc.text)
-# Clamp once, here, so the chunk count shown and the answering call agree.
-overlap = min(overlap, chunk_size - 1)
+# An overlap at or above the chunk size would advance the window by a single
+# word and produce thousands of chunks, so stop rather than clamp.
+if overlap >= chunk_size:
+    st.error(f"**Overlap ({overlap}) must be smaller than the chunk size "
+             f"({chunk_size}).** Fix it under *Chunking settings* in the sidebar.")
+    st.stop()
 
 try:
     n_chunks = len(chunk_text(pages=doc.pages, chunk_size=chunk_size, overlap=overlap))
@@ -286,9 +325,18 @@ except TextTooShortError as exc:
 if is_non_latin(doc.text) and model_name == ENGLISH_MODEL:
     st.warning(
         "**This document isn't in the Latin alphabet, but the English model is "
-        "selected.** It will mostly fail to answer. Switch **Model** to "
-        "*Multilingual (XLM-RoBERTa-large)* in the sidebar."
+        "selected.** It will mostly fail to answer."
     )
+    # Offer the fix as a button: hunting for the right entry in the sidebar is
+    # the sort of step people skip, and then blame the answer.
+    # The change must happen in an on_click callback -- Streamlit runs those
+    # BEFORE the next script run, and a widget's value cannot be rewritten
+    # after that widget has already been drawn.
+    def use_multilingual_model():
+        st.session_state["model_choice"] = MULTILINGUAL_LABEL
+
+    st.button("Switch to the multilingual model", type="primary",
+              on_click=use_multilingual_model)
 
 mode = "direct (whole text)" if n_chunks == 1 else f"chunked ({n_chunks} chunks)"
 c1, c2, c3, c4 = st.columns(4)
@@ -308,6 +356,15 @@ with st.expander("Preview extracted text"):
     # Handy for checking what OCR actually read.
     st.download_button("Download extracted text", doc.text,
                        file_name=f"{Path(pdf_name).stem}_extracted.txt", mime="text/plain")
+    # Indian-language PDFs frequently lose conjuncts here, so say it where the
+    # damage is visible rather than waiting for a failed answer.
+    if is_non_latin(doc.text) and doc.method != "OCR" and ocr_available():
+        st.caption(
+            "Letters missing or words broken above? Indian-language PDFs often store "
+            "conjuncts in a way that can't be mapped back to Unicode (ఆగ్రా → 'ఆ'). "
+            "Tick **“Use OCR even if the PDF has text”** in the sidebar to read the "
+            "pages as images instead — that usually recovers them."
+        )
 
 # ---------------------------------------------------------------------------
 # 3) ask a question
@@ -327,6 +384,12 @@ with st.form("qa_form"):
                              placeholder="e.g. When was the tower completed?")
     submitted = st.form_submit_button("Get answer", type="primary")
 
+# A question passed in the URL is answered once, without a click, so a shared
+# link opens on the result rather than on an empty form.
+if _params.get("q") and not st.session_state.get("url_question_answered"):
+    st.session_state["url_question_answered"] = True
+    submitted = True
+
 if not submitted:
     st.stop()
 if not question.strip():
@@ -342,6 +405,9 @@ try:
         question, pages=doc.pages, chunk_size=chunk_size, overlap=overlap,
         progress=lambda done, total: bar.progress(done / total, text=f"Chunk {done}/{total}"),
     )
+except ModelLoadError as exc:
+    st.error(f"**Could not load the model:** {exc}")
+    st.stop()
 except InferenceAPIError as exc:
     st.error(f"**Inference API error:** {exc}")
     st.stop()
@@ -357,8 +423,25 @@ finally:
 # ---------------------------------------------------------------------------
 st.divider()
 if not result.found:
-    st.error("**No answer found.** The model thinks this document doesn't contain "
-             "the answer. Try rephrasing the question, or check the PDF text above.")
+    st.error("**No confident answer.** Every chunk preferred \"no answer here\" "
+             "over the best span it could find. Try rephrasing the question, or "
+             "check the extracted text above.")
+    # The usual cause for Indian-language PDFs: the text layer lost the
+    # conjunct letters, so the answer is not in the extracted text at all.
+    if is_non_latin(doc.text) and doc.method != "OCR" and ocr_available():
+        st.info(
+            "**Does the extracted text above look broken?** Indian-language PDFs "
+            "often store conjunct letters in a way that cannot be mapped back to "
+            "Unicode (ఆగ్రా comes out as 'ఆ'). Tick **“Use OCR even if the PDF has "
+            "text”** in the sidebar to read the page as an image instead — that "
+            "usually recovers the missing letters."
+        )
+    # Don't throw away what the model did find -- show it as a guess, clearly
+    # labelled. Often the right answer is here, just below the model's bar.
+    if result.suggestions:
+        st.markdown("**Closest guesses** (the model was not confident):")
+        st.table([{"Guess": s.answer, "Confidence": f"{s.score:.1%}",
+                   "Pages": s.chunk.page_label} for s in result.suggestions])
     st.stop()
 
 st.subheader("Answer")

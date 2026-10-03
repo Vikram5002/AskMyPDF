@@ -1,0 +1,404 @@
+[
+  {
+    "pdf": "test_en_english.pdf",
+    "language": "English",
+    "code": "en",
+    "questions": [
+      {
+        "q": "Where is the Taj Mahal located?",
+        "expected": "Agra"
+      },
+      {
+        "q": "Who built the Taj Mahal?",
+        "expected": "Shah Jahan"
+      },
+      {
+        "q": "When was the construction completed?",
+        "expected": "1653"
+      },
+      {
+        "q": "What material is it made of?",
+        "expected": "white marble"
+      }
+    ]
+  },
+  {
+    "pdf": "test_hi_hindi.pdf",
+    "language": "Hindi",
+    "code": "hi",
+    "questions": [
+      {
+        "q": "ताजमहल कहाँ स्थित है?",
+        "expected": "आगरा"
+      },
+      {
+        "q": "ताजमहल किसने बनवाया था?",
+        "expected": "शाहजहाँ"
+      },
+      {
+        "q": "निर्माण कब पूरा हुआ?",
+        "expected": "1653"
+      }
+    ]
+  },
+  {
+    "pdf": "test_bn_bengali.pdf",
+    "language": "Bengali",
+    "code": "bn",
+    "questions": [
+      {
+        "q": "তাজমহল কোথায় অবস্থিত?",
+        "expected": "আগ্রা"
+      },
+      {
+        "q": "নির্মাণকাজ কবে শেষ হয়?",
+        "expected": "1653"
+      }
+    ]
+  },
+  {
+    "pdf": "test_te_telugu.pdf",
+    "language": "Telugu",
+    "code": "te",
+    "questions": [
+      {
+        "q": "తాజ్ మహల్ ఎక్కడ ఉంది?",
+        "expected": "ఆగ్రా"
+      },
+      {
+        "q": "నిర్మాణం ఎప్పుడు పూర్తయింది?",
+        "expected": "1653"
+      }
+    ]
+  },
+  {
+    "pdf": "test_ta_tamil.pdf",
+    "language": "Tamil",
+    "code": "ta",
+    "questions": [
+      {
+        "q": "தாஜ் மஹால் எங்கு அமைந்துள்ளது?",
+        "expected": "ஆக்ரா"
+      },
+      {
+        "q": "கட்டுமானம் எப்போது நிறைவடைந்தது?",
+        "expected": "1653"
+      }
+    ]
+  },
+  {
+    "pdf": "test_kn_kannada.pdf",
+    "language": "Kannada",
+    "code": "kn",
+    "questions": [
+      {
+        "q": "ತಾಜ್ ಮಹಲ್ ಎಲ್ಲಿದೆ?",
+        "expected": "ಆಗ್ರಾ"
+      },
+      {
+        "q": "ನಿರ್ಮಾಣ ಯಾವಾಗ ಪೂರ್ಣಗೊಂಡಿತು?",
+        "expected": "1653"
+      }
+    ]
+  },
+  {
+    "pdf": "test_ml_malayalam.pdf",
+    "language": "Malayalam",
+    "code": "ml",
+    "questions": [
+      {
+        "q": "താജ് മഹൽ എവിടെയാണ് സ്ഥിതി ചെയ്യുന്നത്?",
+        "expected": "ആഗ്ര"
+      },
+      {
+        "q": "നിർമ്മാണം എപ്പോൾ പൂർത്തിയായി?",
+        "expected": "1653"
+      }
+    ]
+  },
+  {
+    "pdf": "test_mr_marathi.pdf",
+    "language": "Marathi",
+    "code": "mr",
+    "questions": [
+      {
+        "q": "ताजमहाल कोठे आहे?",
+        "expected": "आग्रा"
+      },
+      {
+        "q": "बांधकाम कधी पूर्ण झाले?",
+        "expected": "1653"
+      }
+    ]
+  },
+  {
+    "pdf": "test_gu_gujarati.pdf",
+    "language": "Gujarati",
+    "code": "gu",
+    "questions": [
+      {
+        "q": "તાજમહેલ ક્યાં આવેલો છે?",
+        "expected": "આગ્રા"
+      },
+      {
+        "q": "બાંધકામ ક્યારે પૂર્ણ થયું?",
+        "expected": "1653"
+      }
+    ]
+  },
+  {
+    "pdf": "test_pa_punjabi.pdf",
+    "language": "Punjabi",
+    "code": "pa",
+    "questions": [
+      {
+        "q": "ਤਾਜ ਮਹਿਲ ਕਿੱਥੇ ਸਥਿਤ ਹੈ?",
+        "expected": "ਆਗਰਾ"
+      },
+      {
+        "q": "ਉਸਾਰੀ ਕਦੋਂ ਪੂਰੀ ਹੋਈ?",
+        "expected": "1653"
+      }
+    ]
+  },
+  {
+    "pdf": "test_or_odia.pdf",
+    "language": "Odia",
+    "code": "or",
+    "questions": [
+      {
+        "q": "ତାଜମହଲ କେଉଁଠାରେ ଅବସ୍ଥିତ?",
+        "expected": "ଆଗ୍ରା"
+      },
+      {
+        "q": "ନିର୍ମାଣ କେବେ ସମାପ୍ତ ହେଲା?",
+        "expected": "1653"
+      }
+    ]
+  },
+  {
+    "pdf": "test_ur_urdu.pdf",
+    "language": "Urdu",
+    "code": "ur",
+    "questions": [
+      {
+        "q": "تاج محل کہاں واقع ہے؟",
+        "expected": "آگرہ"
+      },
+      {
+        "q": "تعمیر کب مکمل ہوئی؟",
+        "expected": "1653"
+      }
+    ]
+  },
+  {
+    "pdf": "test_as_assamese.pdf",
+    "language": "Assamese",
+    "code": "as",
+    "questions": [
+      {
+        "q": "তাজমহল ক'ত অৱস্থিত?",
+        "expected": "আগ্ৰা"
+      },
+      {
+        "q": "নিৰ্মাণ কেতিয়া সম্পূৰ্ণ হয়?",
+        "expected": "1653"
+      }
+    ]
+  },
+  {
+    "pdf": "test_ne_nepali.pdf",
+    "language": "Nepali",
+    "code": "ne",
+    "questions": [
+      {
+        "q": "ताजमहल कहाँ अवस्थित छ?",
+        "expected": "आग्रा"
+      },
+      {
+        "q": "निर्माण कहिले सम्पन्न भयो?",
+        "expected": "1653"
+      }
+    ]
+  },
+  {
+    "pdf": "test_sa_sanskrit.pdf",
+    "language": "Sanskrit",
+    "code": "sa",
+    "questions": [
+      {
+        "q": "ताजमहलः कुत्र अस्ति?",
+        "expected": "आग्रा"
+      },
+      {
+        "q": "निर्माणं कदा समाप्तम्?",
+        "expected": "1653"
+      }
+    ]
+  },
+  {
+    "pdf": "test_sd_sindhi.pdf",
+    "language": "Sindhi",
+    "code": "sd",
+    "questions": [
+      {
+        "q": "تاج محل ڪٿي واقع آهي؟",
+        "expected": "آگرا"
+      },
+      {
+        "q": "اڏاوت ڪڏهن مڪمل ٿي؟",
+        "expected": "1653"
+      }
+    ]
+  },
+  {
+    "pdf": "test_fr_french.pdf",
+    "language": "French",
+    "code": "fr",
+    "questions": [
+      {
+        "q": "Où se trouve le Taj Mahal ?",
+        "expected": "Agra"
+      },
+      {
+        "q": "Quand la construction s'est-elle achevée ?",
+        "expected": "1653"
+      }
+    ]
+  },
+  {
+    "pdf": "test_es_spanish.pdf",
+    "language": "Spanish",
+    "code": "es",
+    "questions": [
+      {
+        "q": "¿Dónde se encuentra el Taj Mahal?",
+        "expected": "Agra"
+      },
+      {
+        "q": "¿Cuándo terminó la construcción?",
+        "expected": "1653"
+      }
+    ]
+  },
+  {
+    "pdf": "test_de_german.pdf",
+    "language": "German",
+    "code": "de",
+    "questions": [
+      {
+        "q": "Wo befindet sich das Taj Mahal?",
+        "expected": "Agra"
+      },
+      {
+        "q": "Wann wurde der Bau abgeschlossen?",
+        "expected": "1653"
+      }
+    ]
+  },
+  {
+    "pdf": "test_pt_portuguese.pdf",
+    "language": "Portuguese",
+    "code": "pt",
+    "questions": [
+      {
+        "q": "Onde fica o Taj Mahal?",
+        "expected": "Agra"
+      },
+      {
+        "q": "Quando a construção terminou?",
+        "expected": "1653"
+      }
+    ]
+  },
+  {
+    "pdf": "test_ru_russian.pdf",
+    "language": "Russian",
+    "code": "ru",
+    "questions": [
+      {
+        "q": "Где находится Тадж-Махал?",
+        "expected": "Агра"
+      },
+      {
+        "q": "Когда завершилось строительство?",
+        "expected": "1653"
+      }
+    ]
+  },
+  {
+    "pdf": "test_ar_arabic.pdf",
+    "language": "Arabic",
+    "code": "ar",
+    "questions": [
+      {
+        "q": "أين يقع تاج محل؟",
+        "expected": "أجرا"
+      },
+      {
+        "q": "متى اكتمل البناء؟",
+        "expected": "1653"
+      }
+    ]
+  },
+  {
+    "pdf": "test_zh_chinese.pdf",
+    "language": "Chinese",
+    "code": "zh",
+    "questions": [
+      {
+        "q": "泰姬陵位于哪里？",
+        "expected": "阿格拉"
+      },
+      {
+        "q": "工程何时完工？",
+        "expected": "1653"
+      }
+    ]
+  },
+  {
+    "pdf": "test_ja_japanese.pdf",
+    "language": "Japanese",
+    "code": "ja",
+    "questions": [
+      {
+        "q": "タージ・マハルはどこにありますか？",
+        "expected": "アグラ"
+      },
+      {
+        "q": "建設はいつ完成しましたか？",
+        "expected": "1653"
+      }
+    ]
+  },
+  {
+    "pdf": "test_ko_korean.pdf",
+    "language": "Korean",
+    "code": "ko",
+    "questions": [
+      {
+        "q": "타지마할은 어디에 있습니까?",
+        "expected": "아그라"
+      },
+      {
+        "q": "공사는 언제 완료되었습니까?",
+        "expected": "1653"
+      }
+    ]
+  },
+  {
+    "pdf": "test_tr_turkish.pdf",
+    "language": "Turkish",
+    "code": "tr",
+    "questions": [
+      {
+        "q": "Tac Mahal nerede bulunmaktadır?",
+        "expected": "Agra"
+      },
+      {
+        "q": "İnşaat ne zaman tamamlandı?",
+        "expected": "1653"
+      }
+    ]
+  }
+]
