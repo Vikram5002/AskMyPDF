@@ -71,15 +71,28 @@ def find_browser() -> str:
 
 
 def html_to_pdf(browser: str, page_html: str, out_path: Path) -> None:
-    """Print one HTML page to a PDF file using headless Chromium."""
+    """
+    Print one HTML page to a PDF file using headless Chromium.
+
+    --user-data-dir matters: without it, a browser window the user already has
+    open takes over the request, and the new process exits successfully having
+    written nothing. A throwaway profile forces a separate instance.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         source = Path(tmp) / "page.html"
         source.write_text(page_html, encoding="utf-8")
+        profile = Path(tmp) / "profile"
         subprocess.run(
             [browser, "--headless", "--disable-gpu", "--no-pdf-header-footer",
-             f"--print-to-pdf={out_path}", source.as_uri()],
-            check=True, capture_output=True, timeout=120,
+             f"--user-data-dir={profile}", f"--print-to-pdf={out_path}",
+             source.as_uri()],
+            check=True, capture_output=True, timeout=180,
         )
+        if not out_path.exists():
+            raise RuntimeError(
+                f"{Path(browser).name} reported success but wrote no PDF to "
+                f"{out_path}. Close any open {Path(browser).stem} windows and retry."
+            )
 
 
 def document_html(entry: dict) -> str:
