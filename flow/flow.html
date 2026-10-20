@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>AskMyPDF — project flow</title>
+<style>
+  :root {
+    --ink: #10151c;
+    --muted: #5b6672;
+    --line: #d7dde5;
+    --bg: #ffffff;
+    --panel: #f7f9fb;
+    --extract: #2563eb;
+    --ocr: #9333ea;
+    --chunk: #d97706;
+    --model: #dc2626;
+    --out: #059669;
+    --dev: #0f766e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 46px 52px 56px;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    color: var(--ink); background: var(--bg); width: 1640px;
+  }
+  h1 { font-size: 40px; margin: 0 0 4px; letter-spacing: -0.5px; }
+  .sub { color: var(--muted); font-size: 16px; margin-bottom: 30px; }
+  h2 {
+    font-size: 22px; margin: 38px 0 16px; padding-bottom: 8px;
+    border-bottom: 2px solid var(--line); letter-spacing: -0.2px;
+  }
+  h2 span { color: var(--muted); font-weight: 400; font-size: 15px; margin-left: 10px; }
+  code, .file { font-family: "Cascadia Code", Consolas, monospace; font-size: 12.5px; }
+
+  /* ---------- flow building blocks ---------- */
+  .row { display: flex; align-items: stretch; gap: 0; }
+  .step {
+    flex: 1; background: var(--panel); border: 1.5px solid var(--line);
+    border-top: 4px solid var(--c, var(--line)); border-radius: 10px;
+    padding: 14px 16px 15px; min-height: 142px; position: relative;
+  }
+  .step .n {
+    position: absolute; top: -13px; right: 12px; width: 25px; height: 25px;
+    border-radius: 50%; background: var(--c); color: #fff; font-size: 13px;
+    font-weight: 700; display: flex; align-items: center; justify-content: center;
+  }
+  .step h3 { margin: 0 0 3px; font-size: 16px; }
+  .step .file { color: var(--c); display: block; margin-bottom: 8px; font-weight: 600; }
+  .step p { margin: 0 0 6px; font-size: 13px; line-height: 1.5; color: #2c3540; }
+  .step ul { margin: 6px 0 0; padding-left: 15px; font-size: 12.5px; line-height: 1.6; color: #2c3540; }
+  .arrow {
+    flex: 0 0 46px; display: flex; align-items: center; justify-content: center;
+    color: #9aa6b2; font-size: 26px;
+  }
+  .note {
+    font-size: 11.5px; color: var(--muted); background: #fff;
+    border: 1px dashed var(--line); border-radius: 6px; padding: 5px 8px; margin-top: 8px;
+  }
+
+  /* ---------- example strip ---------- */
+  .example {
+    display: flex; gap: 0; align-items: stretch; margin-top: 14px;
+    border: 1.5px solid #cfe3d8; border-radius: 10px; overflow: hidden;
+  }
+  .example .cell { flex: 1; padding: 11px 15px; background: #f2fbf6; }
+  .example .cell + .cell { border-left: 1.5px dashed #cfe3d8; }
+  .example .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: #4b7a63; }
+  .example .val { font-size: 14px; font-weight: 600; margin-top: 2px; }
+  .example .val small { font-weight: 400; color: var(--muted); }
+
+  /* ---------- branch ---------- */
+  .branch { display: flex; gap: 18px; margin-top: 14px; }
+  .branch .card {
+    flex: 1; border: 1.5px solid var(--line); border-left: 4px solid var(--c);
+    border-radius: 9px; padding: 12px 15px; background: #fff;
+  }
+  .branch h4 { margin: 0 0 5px; font-size: 14.5px; }
+  .branch p { margin: 0; font-size: 12.5px; line-height: 1.55; color: #2c3540; }
+
+  /* ---------- module map ---------- */
+  .modules { display: grid; grid-template-columns: repeat(4, 1fr); gap: 13px; }
+  .mod {
+    border: 1.5px solid var(--line); border-radius: 9px; padding: 12px 14px;
+    background: var(--panel);
+  }
+  .mod .file { color: var(--ink); font-weight: 700; font-size: 13px; }
+  .mod p { margin: 5px 0 0; font-size: 12.5px; line-height: 1.5; color: #2c3540; }
+
+  /* ---------- dev timeline ---------- */
+  .timeline { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; margin-top: 6px; }
+  .phase { position: relative; padding: 0 14px 0 0; }
+  .phase .bar {
+    height: 8px; background: var(--dev); border-radius: 4px; margin-bottom: 11px;
+    opacity: calc(0.45 + var(--i) * 0.14);
+  }
+  .phase h4 { margin: 0 0 5px; font-size: 14px; }
+  .phase ul { margin: 0; padding-left: 15px; font-size: 12px; line-height: 1.65; color: #2c3540; }
+  .phase .tag { font-size: 11px; color: var(--dev); font-weight: 700; letter-spacing: .4px; }
+
+  .footer {
+    margin-top: 34px; padding-top: 14px; border-top: 2px solid var(--line);
+    display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted);
+  }
+  .kpi { display: flex; gap: 26px; }
+  .kpi b { color: var(--ink); }
+</style>
+<body>
+
+  <h1>AskMyPDF — how it works</h1>
+  <div class="sub">
+    Extractive question answering over PDFs · Hugging Face <code>pipeline("question-answering")</code>
+    · RoBERTa / XLM-RoBERTa fine-tuned on SQuAD 2.0
+  </div>
+
+  <!-- ================= RUNTIME FLOW ================= -->
+  <h2>1 · Tech flow <span>what happens from the moment a PDF arrives to the moment an answer appears</span></h2>
+
+  <div class="row">
+    <div class="step" style="--c: var(--extract)">
+      <div class="n">1</div>
+      <h3>PDF arrives</h3>
+      <span class="file">app.py</span>
+      <p>Uploaded in the browser or picked from the samples. Saved to <code>/uploads</code>.</p>
+      <ul><li>bytes handed to the extractor</li><li>cached, so a re-run doesn't re-read it</li></ul>
+    </div>
+    <div class="arrow">▶</div>
+
+    <div class="step" style="--c: var(--extract)">
+      <div class="n">2</div>
+      <h3>Text extraction</h3>
+      <span class="file">app/pdf_extractor.py</span>
+      <p><b>pdfplumber</b> first, <b>PyPDF2</b> as a fallback.</p>
+      <ul>
+        <li><code>x_tolerance=1.5</code> — stops words gluing together</li>
+        <li>two-column pages read one column at a time</li>
+        <li>hyphens, right-to-left scripts and control characters repaired</li>
+      </ul>
+    </div>
+    <div class="arrow">▶</div>
+
+    <div class="step" style="--c: var(--ocr)">
+      <div class="n">3</div>
+      <h3>Is there any text?</h3>
+      <span class="file">looks_scanned</span>
+      <p>Under 20 words a page, or half the pages empty, means the pages are <b>images</b>.</p>
+      <ul>
+        <li>yes → carry on to chunking</li>
+        <li>no → OCR path (below)</li>
+      </ul>
+    </div>
+    <div class="arrow">▶</div>
+
+    <div class="step" style="--c: var(--chunk)">
+      <div class="n">4</div>
+      <h3>Chunking</h3>
+      <span class="file">app/chunker.py</span>
+      <p>The model reads at most <b>512 tokens</b>. Long documents are cut into overlapping pieces.</p>
+      <ul>
+        <li>size <b>measured</b> with the model's tokenizer</li>
+        <li>overlap keeps boundary answers whole</li>
+        <li>each chunk remembers its page numbers</li>
+      </ul>
+    </div>
+    <div class="arrow">▶</div>
+
+    <div class="step" style="--c: var(--model)">
+      <div class="n">5</div>
+      <h3>Question answering</h3>
+      <span class="file">app/qa_engine.py</span>
+      <p>Every chunk is read with the question: the model marks where the answer <b>starts</b> and <b>ends</b>.</p>
+      <ul>
+        <li>runs locally, or on Hugging Face's servers</li>
+        <li>also returns a “no answer here” score</li>
+      </ul>
+    </div>
+    <div class="arrow">▶</div>
+
+    <div class="step" style="--c: var(--out)">
+      <div class="n">6</div>
+      <h3>Pick &amp; show</h3>
+      <span class="file">app.py</span>
+      <p>Chunks ranked by <b>span score − “no answer” score</b>, which makes them comparable.</p>
+      <ul>
+        <li>answer + confidence + page</li>
+        <li>source text, answer highlighted</li>
+        <li>history, exportable as CSV</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="branch">
+    <div class="card" style="--c: var(--ocr)">
+      <h4>→ OCR path — scanned books, and Indian-language PDFs that extract badly</h4>
+      <p>
+        <code>app/ocr.py</code> · <b>pypdfium2</b> renders each page to an image →
+        <b>EasyOCR</b> reads the characters off it. ~20 s per page, so you choose the page
+        range; pages already read are cached. Falls back from GPU to CPU if memory runs out.
+        Recovers Telugu conjuncts the text layer destroys: <code>ఆ</code> → <code>ఆగ్రా</code>.
+      </p>
+    </div>
+    <div class="card" style="--c: var(--model)">
+      <h4>→ Model choice — made in the sidebar</h4>
+      <p>
+        <b>deepset/roberta-base-squad2</b> (124M, English) or
+        <b>deepset/xlm-roberta-large-squad2</b> (560M, ~100 languages).
+        Both are <i>extractive</i>: they copy a span out of your document and never write
+        new text, so they cannot invent a fact — but cannot summarise either.
+      </p>
+    </div>
+  </div>
+
+  <div class="example">
+    <div class="cell">
+      <div class="lbl">Input PDF</div>
+      <div class="val">sample_long.pdf <small>3 pages · 1,354 words</small></div>
+    </div>
+    <div class="cell">
+      <div class="lbl">After chunking</div>
+      <div class="val">4 chunks <small>400 words, 50 overlap</small></div>
+    </div>
+    <div class="cell">
+      <div class="lbl">Question</div>
+      <div class="val"><small>“Which computer defeated Garry Kasparov in 1997?”</small></div>
+    </div>
+    <div class="cell">
+      <div class="lbl">Model output</div>
+      <div class="val">Deep&nbsp;Blue <small>chunk 3 of 4</small></div>
+    </div>
+    <div class="cell">
+      <div class="lbl">Shown to the user</div>
+      <div class="val">76.7% <small>confidence · pages 2–3</small></div>
+    </div>
+  </div>
+
+  <!-- ================= MODULE MAP ================= -->
+  <h2>2 · Where each piece lives <span>one file per job, so each step can be explained on its own</span></h2>
+
+  <div class="modules">
+    <div class="mod"><span class="file">app.py</span>
+      <p>Streamlit screen: upload, question, results, history, settings. No NLP logic.</p></div>
+    <div class="mod"><span class="file">app/pdf_extractor.py</span>
+      <p>PDF → text. Library fallback, column handling, hyphen and right-to-left repair, scan detection.</p></div>
+    <div class="mod"><span class="file">app/ocr.py</span>
+      <p>Pages → images → text with EasyOCR. Page ranges, caching, GPU/CPU fallback.</p></div>
+    <div class="mod"><span class="file">app/chunker.py</span>
+      <p>Text → overlapping chunks. Measures tokens per word; counts characters for Chinese and Japanese.</p></div>
+    <div class="mod"><span class="file">app/qa_engine.py</span>
+      <p>The Hugging Face pipeline, the “no answer” handling, and choosing between chunks.</p></div>
+    <div class="mod"><span class="file">app/hf_inference_api.py</span>
+      <p>Optional: same questions answered on Hugging Face's servers instead of locally.</p></div>
+    <div class="mod"><span class="file">app/hub_info.py</span>
+      <p>Live model details from the Hub API — task, downloads, licence — shown in the sidebar.</p></div>
+    <div class="mod"><span class="file">app/config.py</span>
+      <p>Every tunable number in one place: chunk sizes, token budget, thresholds, model names.</p></div>
+  </div>
+
+  <!-- ================= DEVELOPMENT FLOW ================= -->
+  <h2>3 · Development flow <span>how the project was built, and what each stage changed</span></h2>
+
+  <div class="timeline">
+    <div class="phase" style="--i: 1">
+      <div class="bar"></div>
+      <div class="tag">STAGE 1</div>
+      <h4>Foundations</h4>
+      <ul>
+        <li>Checked both models exist on the Hub</li>
+        <li>Pinned <code>transformers&lt;5</code> — v5 removed the QA pipeline</li>
+        <li>Isolated <code>.venv</code>; models cached in <code>/models</code></li>
+      </ul>
+    </div>
+    <div class="phase" style="--i: 2">
+      <div class="bar"></div>
+      <div class="tag">STAGE 2</div>
+      <h4>Core pipeline</h4>
+      <ul>
+        <li>Extractor → chunker → QA engine, one file each</li>
+        <li>Generated sample PDFs with no extra libraries</li>
+        <li>Streamlit UI on top, logic kept out of it</li>
+      </ul>
+    </div>
+    <div class="phase" style="--i: 3">
+      <div class="bar"></div>
+      <div class="tag">STAGE 3</div>
+      <h4>Testing</h4>
+      <ul>
+        <li>Unit tests for chunk overlap, fallbacks, errors</li>
+        <li>End-to-end examples with expected answers</li>
+        <li>UI driven headlessly with Streamlit's AppTest</li>
+      </ul>
+    </div>
+    <div class="phase" style="--i: 4">
+      <div class="bar"></div>
+      <div class="tag">STAGE 4</div>
+      <h4>Real documents</h4>
+      <ul>
+        <li>Research papers exposed glued words, two-column reading and token overflow</li>
+        <li>A scanned Telugu book drove the whole OCR path</li>
+        <li>26 language PDFs built as a test set</li>
+      </ul>
+    </div>
+    <div class="phase" style="--i: 5">
+      <div class="bar"></div>
+      <div class="tag">STAGE 5</div>
+      <h4>Hardening &amp; docs</h4>
+      <ul>
+        <li>Memory, GPU and token failures made survivable and legible</li>
+        <li>README, user manual, this diagram</li>
+        <li>Committed and pushed to GitHub</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="kpi">
+      <span><b>48</b> tests</span>
+      <span><b>7/7</b> English examples</span>
+      <span><b>25/25</b> Indian-language questions</span>
+      <span><b>45/55</b> across 26 languages</span>
+    </div>
+    <div>Python 3.10 · transformers 4.57 · Streamlit · pdfplumber · PyPDF2 · EasyOCR</div>
+  </div>
+
+</body>
+</html>
