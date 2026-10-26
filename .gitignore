@@ -16,3 +16,7 @@ uploads/*
 # PDFs dropped in the project root (test documents, scanned books).
 # Demo PDFs live in samples/ and ARE tracked.
 /*.pdf
+
+# npm (pptxgenjs, used only by scripts/make_presentation.js)
+node_modules/
+package-lock.json

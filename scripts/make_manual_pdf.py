@@ -1,7 +1,10 @@
 """
-Turn mnul/MANUAL.md into a printable mnul/MANUAL.pdf.
+Turn a Markdown document into a printable PDF.
 
-    python scripts/make_manual_pdf.py
+    python scripts/make_manual_pdf.py                     # mnul/MANUAL.md
+    python scripts/make_manual_pdf.py docs/DEVELOPMENT_FLOW.md
+
+Put <div class="page-break"></div> in the Markdown to force a new page.
 
 DEV TOOL -- not needed to use AskMyPDF, and deliberately not in
 requirements.txt. It needs:
@@ -14,6 +17,7 @@ elsewhere in this project, but it quietly does nothing when a browser window
 is already open, so the manual uses Playwright instead.
 """
 
+import argparse
 import sys
 import tempfile
 from pathlib import Path
@@ -21,8 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-SOURCE = ROOT / "mnul" / "MANUAL.md"
-OUTPUT = ROOT / "mnul" / "MANUAL.pdf"
+DEFAULT_SOURCE = ROOT / "mnul" / "MANUAL.md"
 
 CSS = """
   @page { size: A4; margin: 18mm 16mm; }
@@ -46,29 +49,50 @@ CSS = """
                color: #444; }
   img { max-width: 100%; border: 1px solid #ddd; border-radius: 4px; }
   ol, ul { padding-left: 20pt; }
+  .page-break { page-break-before: always; }
+  /* The final "Where NLP is used" page: denser so the table fits one sheet. */
+  .page-break ~ table { font-size: 9pt; }
+  .page-break ~ table th, .page-break ~ table td { padding: 3pt 5pt; }
+  .page-break ~ h1 { margin-top: 0; }
+  h1 + p strong { font-size: 11.5pt; }
 """
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Render a Markdown file to PDF.")
+    parser.add_argument("source", nargs="?", default=str(DEFAULT_SOURCE),
+                        help="the Markdown file (default: mnul/MANUAL.md)")
+    parser.add_argument("-o", "--output", help="output PDF (default: alongside the source)")
+    args = parser.parse_args()
+
+    source_path = Path(args.source)
+    if not source_path.is_absolute():
+        source_path = ROOT / source_path
+    output_path = Path(args.output) if args.output else source_path.with_suffix(".pdf")
+    if not output_path.is_absolute():
+        output_path = ROOT / output_path
+
     try:
         import markdown
     except ImportError:
         print("The markdown package is missing. Install it with:  pip install markdown")
         return 1
-    if not SOURCE.exists():
-        print(f"{SOURCE} not found.")
+    if not source_path.exists():
+        print(f"{source_path} not found.")
         return 1
 
     body = markdown.markdown(
-        SOURCE.read_text(encoding="utf-8"),
+        source_path.read_text(encoding="utf-8"),
         extensions=["tables", "fenced_code", "toc", "sane_lists"],
     )
     # Image paths are relative to mnul/; the HTML is rendered from a temp folder,
     # so point them at the real files instead.
     body = body.replace('src="../docs/', f'src="{(ROOT / "docs").as_uri()}/')
+    body = body.replace('src="docs/', f'src="{(ROOT / "docs").as_uri()}/')
 
+    title = source_path.stem.replace("_", " ").title()
     document = (f'<!doctype html><html lang="en"><meta charset="utf-8">'
-                f"<title>AskMyPDF Manual</title><style>{CSS}</style>"
+                f"<title>{title}</title><style>{CSS}</style>"
                 f"<body>{body}</body></html>")
 
     try:
@@ -93,12 +117,12 @@ def main() -> int:
                 return 1
             page = browser.new_page()
             page.goto(source.as_uri(), wait_until="networkidle")
-            page.pdf(path=str(OUTPUT), format="A4", print_background=True,
+            page.pdf(path=str(output_path), format="A4", print_background=True,
                      margin={"top": "18mm", "bottom": "18mm",
                              "left": "16mm", "right": "16mm"})
             browser.close()
 
-    print(f"Wrote {OUTPUT} ({OUTPUT.stat().st_size // 1024} KB)")
+    print(f"Wrote {output_path} ({output_path.stat().st_size // 1024} KB)")
     return 0
 
 
